@@ -1,0 +1,75 @@
+import cv2
+from ultralytics import YOLO
+import time 
+
+# 載入 YOLOv8 模型
+model = YOLO('yolov8n.pt')
+
+# 讀取影片檔
+video_path = "D:\\user\\Downloads\\OpenCV\\v4.mp4"
+cap = cv2.VideoCapture(video_path)
+
+if not cap.isOpened():
+    print("❌ 影片讀取失敗，請確認檔案名稱或路徑正確")
+    exit()
+
+
+fps = cap.get(cv2.CAP_PROP_FPS)
+speed_factor = 1 
+delay = int(1000 / fps / speed_factor)
+paused = False
+
+window_name = "YOLOv8 K"
+cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+cv2.resizeWindow(window_name, 640, 360)
+
+# --- 新增變數用於計算 FPS ---
+prev_time = 0 
+# ---
+
+while True:
+    # --- 計算 FPS 的起始時間 ---
+    current_time = time.time()
+    # 實際 FPS = 1 / (當前時間 - 上一幀處理時間)
+    actual_fps = 1 / (current_time - prev_time)
+    prev_time = current_time
+    # ---
+    if not paused:
+        ret, frame = cap.read()
+        
+        if not ret:
+            break
+        #降低解析度
+        frame = cv2.resize(frame, (640, 360)) 
+        results = model.track(frame, classes=[0], tracker='bytetrack.yaml', conf=0.6)
+
+        for result in results:
+            if result.boxes.id is not None:
+                boxes = result.boxes.xyxy.cpu().numpy().astype(int)
+                track_ids = result.boxes.id.cpu().numpy().astype(int)
+                
+                for box, track_id in zip(boxes, track_ids):
+                    x1, y1, x2, y2 = box #(X1,Y1)左上(X2Y2)右下
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+
+    # --- 在畫面上印出 FPS ---
+        # 將浮點數的 FPS 轉換為整數或小數點後兩位
+        fps_text = f"FPS: {actual_fps:.2f} (x{speed_factor})"
+        # 在畫面的左上角印出 FPS
+        cv2.putText(frame, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        # ---                
+    
+    cv2.imshow(window_name, frame)
+
+    key = cv2.waitKey(delay if not paused else 0) & 0xFF
+
+    if key == ord(' '):
+        paused = not paused
+    
+    if key == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
